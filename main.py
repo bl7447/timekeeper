@@ -1,5 +1,6 @@
 from pickle import TRUE
 from telegram.ext import *
+from constants import api_key
 
 def sample_responses(input_text):
     user_message = str(input_text).lower()
@@ -30,7 +31,7 @@ def error(update, context):
 
 
 def main():
-    updater = Updater("5313806860:AAF_jl1Otxbnq9Y7pDHbUPZMk6uudvqq5pc", use_context=True)
+    updater = Updater(api_key, use_context=True)
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start_command))
