@@ -1,3 +1,4 @@
+import datetime
 from telegram.ext import *
 from constants import api_key, firebaseConfig
 import pyrebase
@@ -12,10 +13,13 @@ Name, Date, Time = range(3)
 
 
 def start_command(update, context):
+    print(update.message.chat.id)
+    print(update.message.from_user)
     update.message.reply_text("Type /help to get started!")
 
 
 def help_command(update, context):
+    print(update.message.chat.id)
     update.message.reply_text("""
 Here are some commands you can use:
 /view - View upcoming events.
@@ -33,18 +37,23 @@ def handle_message(update, context):
 
 
 def view_command(update, context):
-    events = db.child("events").order_by_child("date").get()
+    chatid = update.message.chat.id
+    events = db.child("users").child(chatid).child("events").order_by_child("date").get()
     events_string = "Here are your scheduled events:"
     i = 1
     for event in events:
-        events_string += f"\n{i}. {event.val()['name']} - {event.val()['date']} at {event.val()['time']}hrs"
+        d = event.val()['day']
+        m = event.val()['month']
+        y = event.val()['year']
+        date_formatted = datetime.date(y, m, d)
+        events_string += f"\n{i}. {event.val()['name']} - {date_formatted} at {event.val()['time']}hrs"
         i += 1
     update.message.reply_text(events_string)
 
 
 def create_command(update, context):
     global data
-    data = {'name': '', 'date': '', 'time': ''}
+    data = {'name': '', 'day': 0, 'month': 0, 'year': 0, 'time': ''}
     update.message.reply_text("Enter the event name! (/cancel to cancel)")
     return Name
 
@@ -56,15 +65,24 @@ def name(update, context):
 
 
 def date(update, context):
-    data['date'] = update.message.text
-    update.message.reply_text(f"Ok, The date will be on {data['date']}!\nEnter the time of the event in 24H format! (/cancel to cancel)")
+    date_input = update.message.text
+    y = int(date_input[4:])
+    m = int(date_input[2:4])
+    d = int(date_input[:2])
+    data['day'] = d
+    data['month'] = m
+    data['year'] = y
+    date_formatted = datetime.date(y, m, d)
+    update.message.reply_text(f"Ok, The date will be on {date_formatted}!\nEnter the time of the event in 24H format! (/cancel to cancel)")
     return Time
 
 
 def time(update, context):
+    chatid = update.message.chat.id
     data['time'] = update.message.text
-    db.child("events").child(data['name']).set(data)
-    update.message.reply_text(f"{data['name']} scheduled for {data['date']} at {data['time']}hrs.\nThe event has been created successfully!")
+    db.child("users").child(chatid).child("events").child(data['name']).set(data)
+    date_formatted = datetime.date(data['year'], data['month'], data['day'])
+    update.message.reply_text(f"{data['name']} scheduled for {date_formatted} at {data['time']}hrs.\nThe event has been created successfully!")
     return ConversationHandler.END
 
 
@@ -74,13 +92,18 @@ def cancel(update, context):
 
 
 def update_command(update, context):
+    chatid = update.message.chat.id
     global data
-    data = {'name': '', 'date': '', 'time': ''}
-    events = db.child("events").order_by_child("name").get()
-    events_string = "Enter the name of an event to update:"
+    data = {'name': '', 'day': 0, 'month': 0, 'year': 0, 'time': ''}
+    events = db.child("users").child(chatid).child("events").order_by_child("name").get()
+    events_string = "Enter the name of an event to edit:"
     i = 1
     for event in events:
-        events_string += f"\n{i}. {event.val()['name']}"
+        d = event.val()['day']
+        m = event.val()['month']
+        y = event.val()['year']
+        date_formatted = datetime.date(y, m, d)
+        events_string += f"\n{i}. {event.val()['name']} - {date_formatted} at {event.val()['time']}hrs"
         i += 1
     events_string += "\n(/cancel to cancel)"
     update.message.reply_text(events_string)
@@ -88,37 +111,53 @@ def update_command(update, context):
 
 
 def updatename(update, context):
+    chatid = update.message.chat.id
     data['name'] = update.message.text
-    current_date = db.child("events").child(data['name']).get().val()['date']
-    update.message.reply_text(f"Current date: {current_date}\nEnter the updated date in DDMMYYYY format or enter 'skip' if there are no changes. (/cancel to cancel)")
+    current_day = db.child('users').child(chatid).child("events").child(data['name']).get().val()['day']
+    current_month = db.child('users').child(chatid).child("events").child(data['name']).get().val()['month']
+    current_year = db.child('users').child(chatid).child("events").child(data['name']).get().val()['year']
+    date_formatted = datetime.date(current_year, current_month, current_day)
+    update.message.reply_text(f"Current date: {date_formatted}\nEnter the updated date in DDMMYYYY format or enter 'skip' if there are no changes. (/cancel to cancel)")
     return Date
 
 
 def updatedate(update, context):
-    option = update.message.text
-    if option != 'skip':
-        db.child("events").child(data['name']).update({"date": option})
-    current_time = db.child("events").child(data['name']).get().val()['time']
+    chatid = update.message.chat.id
+    date_input = update.message.text
+    if date_input != 'skip':
+        y = int(date_input[4:])
+        m = int(date_input[2:4])
+        d = int(date_input[:2])
+        db.child('users').child(chatid).child("events").child(data['name']).update({"day": d})
+        db.child('users').child(chatid).child("events").child(data['name']).update({"month": m})
+        db.child('users').child(chatid).child("events").child(data['name']).update({"year": y})
+    current_time = db.child('users').child(chatid).child("events").child(data['name']).get().val()['time']
     update.message.reply_text(f"Current time: {current_time}\nEnter the updated time in 24H format or enter 'skip' if there are no changes. (/cancel to cancel)")
     return Time
 
 
 def updatetime(update, context):
+    chatid = update.message.chat.id
     option = update.message.text
     if option != 'skip':
-        db.child("events").child(data['name']).update({"time": option})
+        db.child('users').child(chatid).child("events").child(data['name']).update({"time": option})
     update.message.reply_text("The event has been updated successfully!")
     return ConversationHandler.END
 
 
 def delete_command(update, context):
+    chatid = update.message.chat.id
     global data
-    data = {'name': '', 'date': '', 'time': ''}
-    events = db.child("events").order_by_child("name").get()
+    data = {'name': '', 'day': 0, 'month': 0, 'year': 0, 'time': ''}
+    events = db.child("users").child(chatid).child("events").order_by_child("name").get()
     events_string = "Enter the name of an event to delete:"
     i = 1
     for event in events:
-        events_string += f"\n{i}. {event.val()['name']}"
+        d = event.val()['day']
+        m = event.val()['month']
+        y = event.val()['year']
+        date_formatted = datetime.date(y, m, d)
+        events_string += f"\n{i}. {event.val()['name']} - {date_formatted} at {event.val()['time']}hrs"
         i += 1
     events_string += "\n(/cancel to cancel)"
     update.message.reply_text(events_string)
@@ -131,9 +170,10 @@ def deletename(update, context):
     return Date
 
 def deleteoption(update, context):
+    chatid = update.message.chat.id
     option = update.message.text
     if option == 'y':
-        db.child("events").child(data['name']).remove()
+        db.child("users").child(chatid).child("events").child(data['name']).remove()
         update.message.reply_text("Event has been removed.")
     return ConversationHandler.END
 
@@ -161,7 +201,7 @@ def main():
     dp.add_handler(conv_handler)
 
     conv_handler2 = ConversationHandler(
-        entry_points=[CommandHandler("update", update_command)],
+        entry_points=[CommandHandler("edit", update_command)],
         states={
             Name : [MessageHandler(filters=Filters.text & ~Filters.command, callback=updatename)],
             Date : [MessageHandler(filters=Filters.text & ~Filters.command, callback=updatedate)],
